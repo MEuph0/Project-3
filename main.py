@@ -7,6 +7,7 @@ Mason Willy
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.fernet import Fernet
 from urllib.parse import urlparse, parse_qs
 from argon2 import PasswordHasher
 import sqlite3
@@ -15,6 +16,7 @@ import json
 import jwt
 import datetime
 import uuid
+import os
 
 hostName = "localhost"
 serverPort = 8080
@@ -47,6 +49,9 @@ cursor.execute('''CREATE TABLE IF NOT EXISTS auth_logs(
     FOREIGN KEY(user_id) REFERENCES users(id)
 )''')
 
+os.environ["NOT_MY_KEY"] = str(Fernet.generate_key().decode("utf-8"))
+print(repr(os.environ.get("NOT_MY_KEY")))
+
 private_key = rsa.generate_private_key(
     public_exponent=65537,
     key_size=2048,
@@ -55,6 +60,7 @@ expired_key = rsa.generate_private_key(
     public_exponent=65537,
     key_size=2048,
 )
+
 pem = private_key.private_bytes(
     encoding=serialization.Encoding.PEM,
     format=serialization.PrivateFormat.TraditionalOpenSSL,
@@ -65,6 +71,10 @@ expired_pem = expired_key.private_bytes(
     format=serialization.PrivateFormat.TraditionalOpenSSL,
     encryption_algorithm=serialization.NoEncryption()
 )
+
+pem = Fernet(bytes(os.environ.get("NOT_MY_KEY"),"utf-8")).encrypt(pem)
+expired_pem = Fernet(bytes(os.environ.get("NOT_MY_KEY"), "utf-8")).encrypt(expired_pem)
+
 cursor.execute("INSERT INTO keys (key, exp) VALUES (?,?)", (pem, False))
 cursor.execute("INSERT INTO keys (key, exp) VALUES (?,?)", (expired_pem, True))
 conn.commit()
@@ -108,17 +118,17 @@ class MyServer(BaseHTTPRequestHandler):
 
             token_payload = {
                 "user": "username",
-                "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=1)
+                "exp": datetime.datetime.now() + datetime.timedelta(hours=1)
             }
             if 'expired' in params:
                 cursor.execute('SELECT * FROM keys WHERE exp=True')
                 row = cursor.fetchone()
-                pem = row[1]
-                token_payload["exp"] = datetime.datetime.utcnow() - datetime.timedelta(hours=1)
+                pem = Fernet(bytes(os.environ.get("NOT_MY_KEY"), "utf-8")).decrypt(row[1]).decode()
+                token_payload["exp"] = datetime.datetime.now() - datetime.timedelta(hours=1)
             else:
                 cursor.execute('SELECT * FROM keys')
                 row = cursor.fetchone()
-                pem = row[1]
+                pem = Fernet(bytes(os.environ.get("NOT_MY_KEY"), "utf-8")).decrypt(row[1]).decode()
 
             headers = {
                 "kid": f"{row[0]}"
@@ -168,7 +178,8 @@ class MyServer(BaseHTTPRequestHandler):
             rows = cursor.fetchall()
             keys = {"keys": []}
             for row in rows:
-                key = serialization.load_pem_private_key(row[1], password=None)
+                decrypted_key = Fernet(bytes(os.environ.get("NOT_MY_KEY"), "utf-8")).decrypt(row[1])
+                key = serialization.load_pem_private_key(decrypted_key, password=None)
                 numbers = key.private_numbers()
                 jwt_key = {
                     "alg": "RS256",
