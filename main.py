@@ -28,6 +28,7 @@ cursor.execute('''CREATE TABLE IF NOT EXISTS keys(
     exp INTEGER NOT NULL
 )''')
 
+# Create users table
 cursor.execute('''CREATE TABLE IF NOT EXISTS users(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT NOT NULL UNIQUE,
@@ -35,6 +36,15 @@ cursor.execute('''CREATE TABLE IF NOT EXISTS users(
     email TEXT UNIQUE,
     date_registered TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     last_login TIMESTAMP      
+)''')
+
+# Create auth_logs table
+cursor.execute('''CREATE TABLE IF NOT EXISTS auth_logs(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    request_ip TEXT NOT NULL,
+    request_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    user_id INTEGER,  
+    FOREIGN KEY(user_id) REFERENCES users(id)
 )''')
 
 private_key = rsa.generate_private_key(
