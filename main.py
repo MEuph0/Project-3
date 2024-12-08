@@ -50,7 +50,6 @@ cursor.execute('''CREATE TABLE IF NOT EXISTS auth_logs(
 )''')
 
 os.environ["NOT_MY_KEY"] = str(Fernet.generate_key().decode("utf-8"))
-print(repr(os.environ.get("NOT_MY_KEY")))
 
 private_key = rsa.generate_private_key(
     public_exponent=65537,
@@ -114,17 +113,32 @@ class MyServer(BaseHTTPRequestHandler):
     def do_POST(self):
         parsed_path = urlparse(self.path)
         params = parse_qs(parsed_path.query)
-        if parsed_path.path == "/auth":
+        if parsed_path.path == "/auth":            
+            request_headers = self.headers
+            content_length = request_headers.get_all('Content-Length')
+            length = int(content_length[0]) if content_length else 0
 
-            token_payload = {
-                "user": "username",
-                "exp": datetime.datetime.now() + datetime.timedelta(hours=1)
-            }
+            content = self.rfile.read(length)
+            token = json.loads(content)
+            username = token["username"]
+            exp = datetime.datetime.now() + datetime.timedelta(hours=1)
+
+            cursor.execute('SELECT id from users WHERE username=(?)', (username,))
+            list_id = cursor.fetchone()
+            for nums in list_id:
+                user_id = nums
+            request_ip = self.client_address[0]
+            cursor.execute("INSERT INTO auth_logs (user_id, request_ip) VALUES (?,?)", (user_id, request_ip))
+            conn.commit()
+            
+            payload = {"username": username,
+                       "exp": exp}
+
             if 'expired' in params:
                 cursor.execute('SELECT * FROM keys WHERE exp=True')
                 row = cursor.fetchone()
                 pem = Fernet(bytes(os.environ.get("NOT_MY_KEY"), "utf-8")).decrypt(row[1]).decode()
-                token_payload["exp"] = datetime.datetime.now() - datetime.timedelta(hours=1)
+                exp = datetime.datetime.now() - datetime.timedelta(hours=1)
             else:
                 cursor.execute('SELECT * FROM keys')
                 row = cursor.fetchone()
@@ -134,7 +148,7 @@ class MyServer(BaseHTTPRequestHandler):
                 "kid": f"{row[0]}"
             }
             
-            encoded_jwt = jwt.encode(token_payload, pem, algorithm="RS256", headers=headers)
+            encoded_jwt = jwt.encode(payload, pem, algorithm="RS256", headers=headers)
             self.send_response(200)
             self.end_headers()
             self.wfile.write(bytes(encoded_jwt, "utf-8"))
