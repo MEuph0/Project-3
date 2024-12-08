@@ -49,7 +49,10 @@ cursor.execute('''CREATE TABLE IF NOT EXISTS auth_logs(
     FOREIGN KEY(user_id) REFERENCES users(id)
 )''')
 
-os.environ["NOT_MY_KEY"] = str(Fernet.generate_key().decode("utf-8"))
+if "NOT_MY_KEY" in os.environ:
+    pass
+else:
+    os.environ["NOT_MY_KEY"] = str(Fernet.generate_key().decode("utf-8"))
 
 private_key = rsa.generate_private_key(
     public_exponent=65537,
@@ -70,6 +73,7 @@ expired_pem = expired_key.private_bytes(
     format=serialization.PrivateFormat.TraditionalOpenSSL,
     encryption_algorithm=serialization.NoEncryption()
 )
+
 
 pem = Fernet(bytes(os.environ.get("NOT_MY_KEY"),"utf-8")).encrypt(pem)
 expired_pem = Fernet(bytes(os.environ.get("NOT_MY_KEY"), "utf-8")).encrypt(expired_pem)
@@ -135,14 +139,14 @@ class MyServer(BaseHTTPRequestHandler):
                        "exp": exp}
 
             if 'expired' in params:
-                cursor.execute('SELECT * FROM keys WHERE exp=True')
+                cursor.execute('SELECT * FROM keys WHERE exp=True ORDER BY ROWID DESC LIMIT 1')
                 row = cursor.fetchone()
-                pem = Fernet(bytes(os.environ.get("NOT_MY_KEY"), "utf-8")).decrypt(row[1]).decode()
+                pem = Fernet(bytes(os.environ.get("NOT_MY_KEY"), "utf-8")).decrypt(row[1])
                 exp = datetime.datetime.now() - datetime.timedelta(hours=1)
             else:
-                cursor.execute('SELECT * FROM keys')
+                cursor.execute('SELECT * FROM keys ORDER BY ROWID DESC LIMIT 1')
                 row = cursor.fetchone()
-                pem = Fernet(bytes(os.environ.get("NOT_MY_KEY"), "utf-8")).decrypt(row[1]).decode()
+                pem = Fernet(bytes(os.environ.get("NOT_MY_KEY"), "utf-8")).decrypt(row[1])
 
             headers = {
                 "kid": f"{row[0]}"
@@ -188,7 +192,7 @@ class MyServer(BaseHTTPRequestHandler):
             self.send_header("Content-type", "application/json")
             self.end_headers()
             time = datetime.datetime.now()
-            cursor.execute('SELECT * FROM keys WHERE exp=False')
+            cursor.execute('SELECT * FROM keys WHERE exp=False ORDER BY ROWID DESC LIMIT 1')
             rows = cursor.fetchall()
             keys = {"keys": []}
             for row in rows:
