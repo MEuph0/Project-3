@@ -1,5 +1,5 @@
 ''' 
-CSCE 3550 Project 2
+CSCE 3550 Project 3
 Mason Willy
 
 '''
@@ -25,6 +25,16 @@ cursor.execute('''CREATE TABLE IF NOT EXISTS keys(
     key BLOB NOT NULL,
     exp INTEGER NOT NULL
 )''')
+
+cursor.execute('''CREATE TABLE IF NOT EXISTS users(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    email TEXT UNIQUE,
+    date_registered TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_login TIMESTAMP      
+    )''')
+
 private_key = rsa.generate_private_key(
     public_exponent=65537,
     key_size=2048,
