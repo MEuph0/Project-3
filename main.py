@@ -8,11 +8,13 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from urllib.parse import urlparse, parse_qs
+from argon2 import PasswordHasher
 import sqlite3
 import base64
 import json
 import jwt
 import datetime
+import uuid
 
 hostName = "localhost"
 serverPort = 8080
@@ -33,7 +35,7 @@ cursor.execute('''CREATE TABLE IF NOT EXISTS users(
     email TEXT UNIQUE,
     date_registered TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     last_login TIMESTAMP      
-    )''')
+)''')
 
 private_key = rsa.generate_private_key(
     public_exponent=65537,
@@ -88,7 +90,7 @@ class MyServer(BaseHTTPRequestHandler):
         self.end_headers()
         return
 
-    ''' Updated POST function to use database file '''
+    ''' Updated POST function to have /register endpoint '''
     def do_POST(self):
         parsed_path = urlparse(self.path)
         params = parse_qs(parsed_path.query)
@@ -117,6 +119,29 @@ class MyServer(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(bytes(encoded_jwt, "utf-8"))
             return
+        
+        if parsed_path.path == "/register":
+            request_headers = self.headers
+            content_length = request_headers.get_all('Content-Length')
+            length = int(content_length[0]) if content_length else 0
+
+            
+            content = self.rfile.read(length)
+            token = json.loads(content)
+            username = token["username"]
+            email = token["email"]
+            password = str(uuid.uuid4())
+            password_json = {"password": password}
+            self.send_response(201)
+            self.end_headers()
+            self.wfile.write(bytes(json.dumps(password_json), "utf-8"))
+
+            ph = PasswordHasher()
+            password_hash = ph.hash(password)
+            cursor.execute("INSERT INTO users (username, password_hash, email) VALUES (?,?,?)", (username, password_hash, email))
+            conn.commit()
+            return
+
 
         self.send_response(405)
         self.end_headers()
